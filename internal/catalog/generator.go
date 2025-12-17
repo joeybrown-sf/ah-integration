@@ -161,7 +161,7 @@ func (g *Generator) filterPackages(pkgs []Package) []Package {
 	filteredPkgs := make([]Package, 0, len(pkgs))
 	for i, pkg := range pkgs {
 		if (i+1)%20 == 0 {
-			fmt.Printf("Checking %d of %d packages\n", i+1, len(pkgs))
+			fmt.Printf("Checking %d of %d packages. Remaining: %d\n", i+1, len(pkgs), len(pkgs)-i-1)
 		}
 		if pkg.WillMigrate(g.buildpackRegistryClient) {
 			filteredPkgs = append(filteredPkgs, pkg)

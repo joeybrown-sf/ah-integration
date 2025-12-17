@@ -11,13 +11,11 @@ import (
 var cfgFile string
 var rootDir string
 
-// rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "registry-index",
 	Short: "A CLI tool for managing registry index",
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {

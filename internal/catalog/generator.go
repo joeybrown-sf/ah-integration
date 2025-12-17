@@ -15,46 +15,38 @@ type Generator struct {
 	buildpackRegistryClient *BuildpackRegistryClient
 	indexer                 *Indexer
 	rootDir                 string
-	force                   bool
 }
 
-func NewGenerator(migrationThreshold time.Duration, rootDir string, force bool) *Generator {
-	registryCacheDir := filepath.Join(rootDir, ".cache", "registry-api")
+func NewGenerator(migrationThreshold time.Duration, rootDir string) *Generator {
+	registryCacheDir := filepath.Join(rootDir, "registry-api-cache")
 	return &Generator{
-		rootDir:                 rootDir,
-		force:                   force,
 		packageFactory:          NewPackageFactory(http.DefaultClient, migrationThreshold),
-		buildpackRegistryClient: NewBuildpackRegistryClient(http.DefaultClient, registryCacheDir, force),
-		indexer:                 NewIndexer(rootDir, force),
+		buildpackRegistryClient: NewBuildpackRegistryClient(http.DefaultClient, registryCacheDir),
+		indexer:                 NewIndexer(),
+		rootDir:                 rootDir,
 	}
 }
 
-func (g *Generator) GenerateCatalogFiles() error {
-	err := g.indexer.Clone()
+func (g *Generator) GenerateCatalogFiles(force bool, namespaces []string, ignoredRegistries []string) error {
+	// 1. Clone https://github.com/buildpacks/registry-index.git
+	repoDir, err := g.indexer.Clone(g.rootDir, force)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Scanning packages in: %s\n", g.rootDir)
-	localPkgs, err := g.scanPackages(g.rootDir)
+	// 2. Scan the packages in the index
+	localPkgs, err := g.scanPackages(repoDir)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Found %d packages\n", len(localPkgs))
-
-	pkgs := g.filterPackages(localPkgs)
+	// 3. Filter down to only packages that are candidates for migration
+	pkgs := g.filterPackages(localPkgs, namespaces, ignoredRegistries)
 
 	registryCount := make(map[string]int)
 
 	for _, pkg := range pkgs {
 		registryCount[pkg.ImageRegistry()]++
-		if _, ok := pkg.(*ECRPackage); ok {
-			return fmt.Errorf("no ECR packages are candidates for migration")
-		}
-		if _, ok := pkg.(*GHCRPackage); ok {
-			fmt.Printf("Artifact: %s/%s:%s GHCRPackage: %s/%s:%s\n", pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version(), pkg.ImageRepository(), pkg.ImageName(), pkg.Version())
-		}
 	}
 
 	if len(registryCount) == 0 {
@@ -109,7 +101,7 @@ func (g *Generator) scanPackages(path string) ([]Package, error) {
 		}
 	}
 
-	fmt.Printf("Scanned %d files\n", fileCount)
+	fmt.Printf("Found %d index files in %s\n", fileCount, path)
 	return allPkgs, nil
 }
 
@@ -156,17 +148,61 @@ type rawPackage struct {
 	Addr      string `json:"addr"`
 }
 
-func (g *Generator) filterPackages(pkgs []Package) []Package {
-	fmt.Printf("Starting to filter %d packages\n", len(pkgs))
+func (g *Generator) filterByNamespaces(pkgs []Package, namespaces []string) []Package {
+	if len(namespaces) == 0 {
+		return pkgs
+	}
+
+	namespaceMap := make(map[string]bool)
+	for _, ns := range namespaces {
+		namespaceMap[ns] = true
+	}
+
+	filteredPkgs := make([]Package, 0, len(pkgs))
+	for _, pkg := range pkgs {
+		if namespaceMap[pkg.ArtifactRepository()] {
+			filteredPkgs = append(filteredPkgs, pkg)
+		}
+	}
+	return filteredPkgs
+}
+
+func (g *Generator) filterByIgnoredRegistries(pkgs []Package, ignoredRegistries []string) []Package {
+	if len(ignoredRegistries) == 0 {
+		return pkgs
+	}
+
+	registryMap := make(map[string]bool)
+	for _, reg := range ignoredRegistries {
+		registryMap[reg] = true
+	}
+
+	filteredPkgs := make([]Package, 0, len(pkgs))
+	for _, pkg := range pkgs {
+		if !registryMap[pkg.ImageRegistry()] {
+			filteredPkgs = append(filteredPkgs, pkg)
+		}
+	}
+	return filteredPkgs
+}
+
+func (g *Generator) filterPackages(pkgs []Package, namespaces []string, ignoredRegistries []string) []Package {
+	if len(namespaces) > 0 {
+		pkgs = g.filterByNamespaces(pkgs, namespaces)
+	}
+
+	if len(ignoredRegistries) > 0 {
+		pkgs = g.filterByIgnoredRegistries(pkgs, ignoredRegistries)
+	}
+
 	filteredPkgs := make([]Package, 0, len(pkgs))
 	for i, pkg := range pkgs {
 		if (i+1)%20 == 0 {
-			fmt.Printf("Checking %d of %d packages. Remaining: %d\n", i+1, len(pkgs), len(pkgs)-i-1)
+			fmt.Printf("Pulling package metadata from registry-api: %d of %d packages. Remaining: %d\n", i+1, len(pkgs), len(pkgs)-i-1)
 		}
 		if pkg.WillMigrate(g.buildpackRegistryClient) {
 			filteredPkgs = append(filteredPkgs, pkg)
 		}
 	}
-	fmt.Printf("Finished filtering: %d packages will migrate\n", len(filteredPkgs))
 	return filteredPkgs
 }

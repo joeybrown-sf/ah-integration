@@ -10,21 +10,25 @@ import (
 	"time"
 )
 
+type Artifact interface {
+	ArtifactRepository() string
+	ArtifactName() string
+	Version() string
+}
+
 type BuildpackRegistryClient struct {
 	httpClient *http.Client
 	cacheDir   string
-	force      bool
 	limiter    *rateLimiter
 }
 
-// rateLimiter implements a token bucket rate limiter
-// Rate limit: 10 requests per 5 seconds = 1 request per 500ms
 type rateLimiter struct {
 	tokens chan struct{}
 	ticker *time.Ticker
 	once   sync.Once
 }
 
+// Rate limit: 10 requests per 5 seconds = 1 request per 500ms
 func newRateLimiter() *rateLimiter {
 	rl := &rateLimiter{
 		tokens: make(chan struct{}, 10),
@@ -48,24 +52,15 @@ func (rl *rateLimiter) wait() {
 	<-rl.tokens
 }
 
-func (rl *rateLimiter) stop() {
-	rl.once.Do(func() {
-		if rl.ticker != nil {
-			rl.ticker.Stop()
-		}
-	})
-}
-
-func NewBuildpackRegistryClient(httpClient *http.Client, cacheDir string, force bool) *BuildpackRegistryClient {
+func NewBuildpackRegistryClient(httpClient *http.Client, cacheDir string) *BuildpackRegistryClient {
 	return &BuildpackRegistryClient{
 		httpClient: httpClient,
 		cacheDir:   cacheDir,
-		force:      force,
 		limiter:    newRateLimiter(),
 	}
 }
 
-func (c *BuildpackRegistryClient) GetBuildpackRegistry(pkg Package) (*registryMetadata, error) {
+func (c *BuildpackRegistryClient) GetBuildpackRegistryMetadata(pkg Artifact, force bool) (*registryMetadata, error) {
 	cacheFile := filepath.Join(c.cacheDir, fmt.Sprintf("%s-%s-%s.json", pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version()))
 
 	if err := os.MkdirAll(c.cacheDir, 0755); err != nil {
@@ -73,7 +68,7 @@ func (c *BuildpackRegistryClient) GetBuildpackRegistry(pkg Package) (*registryMe
 	}
 
 	fileInfo, err := os.Stat(cacheFile)
-	useCache := err == nil && !c.force && fileInfo != nil && fileInfo.Size() > 0
+	useCache := err == nil && !force && fileInfo != nil && fileInfo.Size() > 0
 
 	if useCache {
 		content, err := os.ReadFile(cacheFile)
@@ -95,7 +90,6 @@ func (c *BuildpackRegistryClient) GetBuildpackRegistry(pkg Package) (*registryMe
 	var response *http.Response
 
 	for attempt := range maxRetries {
-		// Wait for rate limiter before making the API request
 		c.limiter.wait()
 
 		response, err = c.httpClient.Get(url)
@@ -109,7 +103,6 @@ func (c *BuildpackRegistryClient) GetBuildpackRegistry(pkg Package) (*registryMe
 				time.Sleep(1 * time.Second)
 				continue
 			}
-			// If this was the last attempt, return error
 			return nil, fmt.Errorf("registry API returned status 429 (rate limited) after %d retries for %s/%s/%s", maxRetries, pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version())
 		}
 
@@ -128,7 +121,6 @@ func (c *BuildpackRegistryClient) GetBuildpackRegistry(pkg Package) (*registryMe
 		return nil, fmt.Errorf("failed to decode registry response: %w", err)
 	}
 
-	// Validate that we got meaningful data before caching
 	if metadata.ID == "" || metadata.Name == "" {
 		return nil, fmt.Errorf("registry API returned incomplete metadata for %s/%s/%s", pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version())
 	}

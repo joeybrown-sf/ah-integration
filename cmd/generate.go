@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// generateCmd represents the generate command
 var generateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "Generate artifacthub-pkg.yml files in .catalog directories",
@@ -32,10 +31,26 @@ var generateCmd = &cobra.Command{
 		force := viper.GetBool("force")
 		migrationThresholdMonths = cmd.Flags().Int("migration-threshold-mo", 24, "Threshold for migration in months")
 
-		migrationThreshold := time.Duration(*migrationThresholdMonths) * 30 * 24 * time.Hour
-		generator := catalog.NewGenerator(migrationThreshold, root, force)
+		// Get namespaces from flag or config
+		var namespaces []string
+		if cmd.Flags().Changed("namespaces") {
+			namespaces, _ = cmd.Flags().GetStringSlice("namespaces")
+		} else {
+			namespaces = viper.GetStringSlice("namespaces")
+		}
 
-		err := generator.GenerateCatalogFiles()
+		// Get ignored_registries from flag or config
+		var ignoredRegistries []string
+		if cmd.Flags().Changed("ignored-registries") {
+			ignoredRegistries, _ = cmd.Flags().GetStringSlice("ignored-registries")
+		} else {
+			ignoredRegistries = viper.GetStringSlice("ignored_registries")
+		}
+
+		migrationThreshold := time.Duration(*migrationThresholdMonths) * 30 * 24 * time.Hour
+		generator := catalog.NewGenerator(migrationThreshold, root)
+
+		err := generator.GenerateCatalogFiles(force, namespaces, ignoredRegistries)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -46,5 +61,9 @@ var generateCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(generateCmd)
 	generateCmd.Flags().BoolP("force", "f", false, "Overwrite existing artifacthub-pkg.yml files")
+	generateCmd.Flags().StringSlice("namespaces", []string{}, "Filter packages by namespace(s). Can be specified multiple times or as comma-separated values")
+	generateCmd.Flags().StringSlice("ignored-registries", []string{}, "Ignore packages from registry(ies). Can be specified multiple times or as comma-separated values")
 	viper.BindPFlag("force", generateCmd.Flags().Lookup("force"))
+	viper.BindPFlag("namespaces", generateCmd.Flags().Lookup("namespaces"))
+	viper.BindPFlag("ignored_registries", generateCmd.Flags().Lookup("ignored-registries"))
 }

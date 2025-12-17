@@ -17,6 +17,7 @@ type Package interface {
 	ArtifactRepository() string
 	ArtifactName() string
 	WillMigrate(registryClient *BuildpackRegistryClient) bool
+	DigestRef() string
 }
 
 type artifact struct {
@@ -38,6 +39,15 @@ func (a *artifact) Yanked() bool               { return a.yanked }
 func (a *artifact) ArtifactRepository() string { return a.artifactRepository }
 func (a *artifact) ArtifactName() string       { return a.artifactName }
 
+func (a *artifact) GetBuildpackRegistryMetadata(registryClient *BuildpackRegistryClient, force bool) (registryMetadata, bool) {
+	metadata, err := registryClient.GetBuildpackRegistryMetadata(a, force)
+	if err != nil {
+		fmt.Printf("failed to get buildpack registry for %s/%s: %v\n", a.ImageRepository(), a.ImageName(), err)
+		return registryMetadata{}, false
+	}
+	return *metadata, true
+}
+
 type DockerhubPackage struct{ artifact }
 
 func (*DockerhubPackage) ImageRegistry() string { return "index.docker.io" }
@@ -46,39 +56,22 @@ func (p *DockerhubPackage) WillMigrate(registryClient *BuildpackRegistryClient) 
 		return false
 	}
 
-	metadata, err := registryClient.GetBuildpackRegistry(p)
-	if err != nil {
-		fmt.Printf("failed to get buildpack registry for %s/%s: %v\n", p.ImageRepository(), p.ImageName(), err)
-		return false
-	}
+	metadata, exists := p.GetBuildpackRegistryMetadata(registryClient, false)
+	return exists && metadata.IsRecent(p.migrationThreshold)
+}
 
-	return metadata.IsRecent(p.migrationThreshold)
+func (p *DockerhubPackage) DigestRef() string {
+	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
 }
 
 type ECRPackage struct{ artifact }
 
 func (*ECRPackage) ImageRegistry() string { return "public.ecr.aws" }
 
-// There were a handful of packages that used ECR, but none will be migrated.
-func (p *ECRPackage) WillMigrate(_ *BuildpackRegistryClient) bool {
-	if p.Yanked() {
-		return false
-	}
+func (p *ECRPackage) WillMigrate(_ *BuildpackRegistryClient) bool { return false }
 
-	// Spot checked images--haven't been updated in almost 2 years
-	if p.ArtifactRepository() == "initializ-buildpacks" ||
-		p.ArtifactRepository() == "initializ-buildpack" ||
-		p.ArtifactRepository() == "naveeninitializ" ||
-		p.ArtifactRepository() == "vivek-buildpacks" {
-		return false
-	}
-
-	// Spot checked ecr--couldn't find anything
-	if p.ArtifactRepository() == "malax" || p.ArtifactRepository() == "nv" {
-		return false
-	}
-
-	return true
+func (p *ECRPackage) DigestRef() string {
+	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
 }
 
 type GHCRPackage struct{ artifact }
@@ -89,41 +82,31 @@ func (p *GHCRPackage) WillMigrate(registryClient *BuildpackRegistryClient) bool 
 		return false
 	}
 
-	metadata, err := registryClient.GetBuildpackRegistry(p)
-	if err != nil {
-		fmt.Printf("failed to get buildpack registry for %s/%s: %v\n", p.ImageRepository(), p.ImageName(), err)
-		return false
-	}
+	metadata, exists := p.GetBuildpackRegistryMetadata(registryClient, false)
+	return exists && metadata.IsRecent(p.migrationThreshold)
+}
 
-	return metadata.IsRecent(p.migrationThreshold)
+func (p *GHCRPackage) DigestRef() string {
+	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
 }
 
 type GCRPackage struct{ artifact }
 
-func (*GCRPackage) ImageRegistry() string { return "gcr.io" }
-func (p *GCRPackage) WillMigrate(registryClient *BuildpackRegistryClient) bool {
-	if p.Yanked() {
-		return false
-	}
+func (*GCRPackage) ImageRegistry() string                         { return "gcr.io" }
+func (p *GCRPackage) WillMigrate(_ *BuildpackRegistryClient) bool { return false }
 
-	metadata, err := registryClient.GetBuildpackRegistry(p)
-	if err != nil {
-		fmt.Printf("failed to get buildpack registry for %s/%s: %v\n", p.ImageRepository(), p.ImageName(), err)
-		return false
-	}
-
-	return metadata.IsRecent(p.migrationThreshold)
+func (p *GCRPackage) DigestRef() string {
+	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
 }
 
 type FuturehaxPackage struct{ artifact }
 
-func (*FuturehaxPackage) ImageRegistry() string { return "registry.futurehax.com" }
-
-// 0.0.1 -> registry.futurehax.com/futurehax/androidbuildpack@sha256:41983061e83937e1c4c01b2a388c37f6da5075dd6e59dbb0a2e077e54ab0f5bd
-// 0.0.2 -> registry.futurehax.com/futurehax/androidbuildpack@sha256:96df7c7a960892061cb1d7b45957a852c04f05e84934e9fb966565d8fd4d47a1
-// 0.0.3 -> registry.futurehax.com/futurehax/androidbuildpack@sha256:874ddf3f9e03d573375ffdc8ec51a8e06ccf730f7e1b17aee37621451c5bbe73
-// I got redirected and DENIED: access forbidden. So I'm not going to migrate it.
+func (*FuturehaxPackage) ImageRegistry() string                         { return "registry.futurehax.com" }
 func (p *FuturehaxPackage) WillMigrate(_ *BuildpackRegistryClient) bool { return false }
+
+func (p *FuturehaxPackage) DigestRef() string {
+	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
+}
 
 func NewPackageFactory(httpClient *http.Client, migrationThreshold time.Duration) *PackageFactory {
 	return &PackageFactory{

@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug ah-integration (generate command)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}",
+            "env": {},
+            "args": ["generate", "--config", "${workspaceFolder}/config.yml"],
+            "showLog": true
+        },
+    ]
+}
+

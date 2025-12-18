@@ -124,9 +124,8 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 			Name:    pkg.ArtifactName(),
 			ContainersImages: []*ContainerImage{
 				{
-					Name:        pkg.ImageName(),
-					Image:       pkg.VersionTagRef(),
-					Whitelisted: true,
+					Name:  pkg.ImageName(),
+					Image: pkg.VersionTagRef(),
 				},
 			},
 			Digest:      pkg.ImageDigest(),

@@ -48,10 +48,10 @@ func (a *artifact) Yanked() bool               { return a.yanked }
 func (a *artifact) ArtifactRepository() string { return a.artifactRepository }
 func (a *artifact) ArtifactName() string       { return a.artifactName }
 func (a *artifact) CreatedAt() time.Time       { return a.createdAt }
-func (a *artifact) SetCreatedAt(t time.Time)    { a.createdAt = t }
-func (a *artifact) Description() string         { return a.description }
-func (a *artifact) Licenses() []string          { return a.licenses }
-func (a *artifact) Homepage() string            { return a.homepage }
+func (a *artifact) SetCreatedAt(t time.Time)   { a.createdAt = t }
+func (a *artifact) Description() string        { return a.description }
+func (a *artifact) Licenses() []string         { return a.licenses }
+func (a *artifact) Homepage() string           { return a.homepage }
 
 func (a *artifact) GetBuildpackRegistryMetadata(registryClient *BuildpackRegistryClient, force bool) (registryMetadata, bool) {
 	metadata, err := registryClient.GetBuildpackRegistryMetadata(a, force)

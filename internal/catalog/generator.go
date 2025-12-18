@@ -141,11 +141,15 @@ func (g *Generator) parsePackageJsonL(path string) ([]Package, error) {
 }
 
 type rawPackage struct {
-	Namespace string `json:"ns"`
-	Name      string `json:"name"`
-	Version   string `json:"version"`
-	Yanked    bool   `json:"yanked"`
-	Addr      string `json:"addr"`
+	Namespace   string    `json:"ns"`
+	Name        string    `json:"name"`
+	Version     string    `json:"version"`
+	CreatedAt   time.Time `json:"created_at"`
+	Description string    `json:"description"`
+	Yanked      bool      `json:"yanked"`
+	Addr        string    `json:"addr"`
+	Licenses    []string  `json:"licenses"`
+	Homepage    string    `json:"homepage"`
 }
 
 func (g *Generator) filterByNamespaces(pkgs []Package, namespaces []string) []Package {
@@ -200,6 +204,36 @@ func (g *Generator) filterPackages(pkgs []Package, namespaces []string, ignoredR
 		if (i+1)%20 == 0 {
 			fmt.Printf("Pulling package metadata from registry-api: %d of %d packages. Remaining: %d\n", i+1, len(pkgs), len(pkgs)-i-1)
 		}
+		
+		// If CreatedAt is zero, try to get it from registry metadata
+		if pkg.CreatedAt().IsZero() {
+			// Try to get metadata to populate CreatedAt
+			// We need to access the artifact's GetBuildpackRegistryMetadata method
+			// Use type assertion to check if it's one of our package types
+			switch p := pkg.(type) {
+			case *DockerhubPackage:
+				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
+					p.SetCreatedAt(metadata.CreatedAt)
+				}
+			case *GHCRPackage:
+				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
+					p.SetCreatedAt(metadata.CreatedAt)
+				}
+			case *ECRPackage:
+				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
+					p.SetCreatedAt(metadata.CreatedAt)
+				}
+			case *GCRPackage:
+				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
+					p.SetCreatedAt(metadata.CreatedAt)
+				}
+			case *FuturehaxPackage:
+				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
+					p.SetCreatedAt(metadata.CreatedAt)
+				}
+			}
+		}
+		
 		if pkg.WillMigrate(g.buildpackRegistryClient) {
 			filteredPkgs = append(filteredPkgs, pkg)
 		}

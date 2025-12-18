@@ -13,12 +13,16 @@ type Package interface {
 	ImageName() string
 	ImageDigest() string
 	Version() string
+	Description() string
 	Yanked() bool
 	ArtifactRepository() string
 	ArtifactName() string
+	CreatedAt() time.Time
 	WillMigrate(registryClient *BuildpackRegistryClient) bool
 	DigestRef() string
 	VersionTagRef() string
+	Licenses() []string
+	Homepage() string
 }
 
 type artifact struct {
@@ -30,6 +34,10 @@ type artifact struct {
 	artifactRepository string
 	artifactName       string
 	migrationThreshold time.Duration
+	createdAt          time.Time
+	description        string
+	licenses           []string
+	homepage           string
 }
 
 func (a *artifact) ImageRepository() string    { return a.imageRepository }
@@ -39,6 +47,11 @@ func (a *artifact) Version() string            { return a.version }
 func (a *artifact) Yanked() bool               { return a.yanked }
 func (a *artifact) ArtifactRepository() string { return a.artifactRepository }
 func (a *artifact) ArtifactName() string       { return a.artifactName }
+func (a *artifact) CreatedAt() time.Time       { return a.createdAt }
+func (a *artifact) SetCreatedAt(t time.Time)    { a.createdAt = t }
+func (a *artifact) Description() string         { return a.description }
+func (a *artifact) Licenses() []string          { return a.licenses }
+func (a *artifact) Homepage() string            { return a.homepage }
 
 func (a *artifact) GetBuildpackRegistryMetadata(registryClient *BuildpackRegistryClient, force bool) (registryMetadata, bool) {
 	metadata, err := registryClient.GetBuildpackRegistryMetadata(a, force)
@@ -161,6 +174,10 @@ func (v *PackageFactory) CreatePackage(artifactRepository string, artifactName s
 		version:            rawPkg.Version,
 		yanked:             rawPkg.Yanked,
 		migrationThreshold: v.migrationThreshold,
+		createdAt:          rawPkg.CreatedAt,
+		description:        rawPkg.Description,
+		licenses:           rawPkg.Licenses,
+		homepage:           rawPkg.Homepage,
 	}
 
 	switch registryHost {

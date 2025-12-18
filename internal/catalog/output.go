@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -64,12 +65,12 @@ type PackageMetadata struct {
 	AlternativeName         string            `yaml:"alternativeName"`
 	Category                string            `yaml:"category"`
 	DisplayName             string            `yaml:"displayName"`
-	CreatedAt               string            `yaml:"createdAt"`
+	CreatedAt               string            `yaml:"createdAt,omitempty"`
 	Description             string            `yaml:"description"`
 	LogoPath                string            `yaml:"logoPath"`
 	LogoURL                 string            `yaml:"logoURL"`
 	Digest                  string            `yaml:"digest"`
-	License                 string            `yaml:"license"`
+	License                 string            `yaml:"license,omitempty"`
 	HomeURL                 string            `yaml:"homeURL"`
 	AppVersion              string            `yaml:"appVersion"`
 	PublisherID             string            `yaml:"publisherID"`
@@ -108,6 +109,16 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 		}
 		// File doesn't exist or we're forcing overwrite, proceed to create it
 
+		var license string
+		if len(pkg.Licenses()) > 0 {
+			license = pkg.Licenses()[0]
+		}
+
+		description := pkg.Description()
+		if description == "" {
+			description = "Description not available"
+		}
+
 		pkgMetadata := PackageMetadata{
 			Version: pkg.Version(),
 			Name:    pkg.ArtifactName(),
@@ -118,7 +129,20 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 					Whitelisted: true,
 				},
 			},
-			Digest: pkg.ImageDigest(),
+			Digest:      pkg.ImageDigest(),
+			Description: description,
+			DisplayName: pkg.ArtifactName(),
+			HomeURL:     pkg.Homepage(),
+		}
+
+		// Only set CreatedAt if it's not the zero value
+		if !pkg.CreatedAt().IsZero() {
+			pkgMetadata.CreatedAt = pkg.CreatedAt().Format(time.RFC3339)
+		}
+
+		// Only set License if it's not empty
+		if license != "" {
+			pkgMetadata.License = license
 		}
 
 		if err := os.MkdirAll(filepath.Dir(artifacthubPkgYml), 0755); err != nil {

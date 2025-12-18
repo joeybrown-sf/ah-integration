@@ -18,6 +18,7 @@ type Package interface {
 	ArtifactName() string
 	WillMigrate(registryClient *BuildpackRegistryClient) bool
 	DigestRef() string
+	VersionTagRef() string
 }
 
 type artifact struct {
@@ -64,6 +65,10 @@ func (p *DockerhubPackage) DigestRef() string {
 	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
 }
 
+func (p *DockerhubPackage) VersionTagRef() string {
+	return fmt.Sprintf("%s/%s/%s:%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.Version())
+}
+
 type ECRPackage struct{ artifact }
 
 func (*ECRPackage) ImageRegistry() string { return "public.ecr.aws" }
@@ -72,6 +77,10 @@ func (p *ECRPackage) WillMigrate(_ *BuildpackRegistryClient) bool { return false
 
 func (p *ECRPackage) DigestRef() string {
 	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
+}
+
+func (p *ECRPackage) VersionTagRef() string {
+	return fmt.Sprintf("%s/%s/%s:%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.Version())
 }
 
 type GHCRPackage struct{ artifact }
@@ -90,6 +99,10 @@ func (p *GHCRPackage) DigestRef() string {
 	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
 }
 
+func (p *GHCRPackage) VersionTagRef() string {
+	return fmt.Sprintf("%s/%s/%s:%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.Version())
+}
+
 type GCRPackage struct{ artifact }
 
 func (*GCRPackage) ImageRegistry() string                         { return "gcr.io" }
@@ -99,6 +112,10 @@ func (p *GCRPackage) DigestRef() string {
 	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
 }
 
+func (p *GCRPackage) VersionTagRef() string {
+	return fmt.Sprintf("%s/%s/%s:%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.Version())
+}
+
 type FuturehaxPackage struct{ artifact }
 
 func (*FuturehaxPackage) ImageRegistry() string                         { return "registry.futurehax.com" }
@@ -106,6 +123,10 @@ func (p *FuturehaxPackage) WillMigrate(_ *BuildpackRegistryClient) bool { return
 
 func (p *FuturehaxPackage) DigestRef() string {
 	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
+}
+
+func (p *FuturehaxPackage) VersionTagRef() string {
+	return fmt.Sprintf("%s/%s/%s:%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.Version())
 }
 
 func NewPackageFactory(httpClient *http.Client, migrationThreshold time.Duration) *PackageFactory {

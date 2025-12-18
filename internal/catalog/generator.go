@@ -15,50 +15,50 @@ type Generator struct {
 	buildpackRegistryClient *BuildpackRegistryClient
 	indexer                 *Indexer
 	rootDir                 string
+	outputWriter            OutputWriter
 }
 
-func NewGenerator(migrationThreshold time.Duration, rootDir string) *Generator {
+func NewGenerator(migrationThreshold time.Duration, rootDir string, outputWriter OutputWriter) *Generator {
 	registryCacheDir := filepath.Join(rootDir, "registry-api-cache")
 	return &Generator{
 		packageFactory:          NewPackageFactory(http.DefaultClient, migrationThreshold),
 		buildpackRegistryClient: NewBuildpackRegistryClient(http.DefaultClient, registryCacheDir),
 		indexer:                 NewIndexer(),
 		rootDir:                 rootDir,
+		outputWriter:            outputWriter,
 	}
 }
 
 func (g *Generator) GenerateCatalogFiles(force bool, namespaces []string, ignoredRegistries []string) error {
-	// 1. Clone https://github.com/buildpacks/registry-index.git
+	// Clone https://github.com/buildpacks/registry-index.git
 	repoDir, err := g.indexer.Clone(g.rootDir, force)
 	if err != nil {
 		return err
 	}
 
-	// 2. Scan the packages in the index
+	// Scan the packages in the index
 	localPkgs, err := g.scanPackages(repoDir)
 	if err != nil {
 		return err
 	}
 
-	// 3. Filter down to only packages that are candidates for migration
+	// Filter down to only packages that are candidates for migration
 	pkgs := g.filterPackages(localPkgs, namespaces, ignoredRegistries)
 
-	registryCount := make(map[string]int)
+	// // Count registries
+	// registryCount := make(map[string]int)
+	// for _, pkg := range pkgs {
+	// 	registryCount[pkg.ImageRegistry()]++
+	// }
+	// if len(registryCount) == 0 {
+	// 	fmt.Println("No packages will migrate (registries map is empty)")
+	// 	return nil
+	// }
+	// for registry, count := range registryCount {
+	// 	fmt.Printf("%s: %d\n", registry, count)
+	// }
 
-	for _, pkg := range pkgs {
-		registryCount[pkg.ImageRegistry()]++
-	}
-
-	if len(registryCount) == 0 {
-		fmt.Println("No packages will migrate (registries map is empty)")
-		return nil
-	}
-
-	for registry, count := range registryCount {
-		fmt.Printf("%s: %d\n", registry, count)
-	}
-
-	return nil
+	return g.outputWriter.Write(pkgs, force)
 }
 
 func (g *Generator) scanPackages(path string) ([]Package, error) {

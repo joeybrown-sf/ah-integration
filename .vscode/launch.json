@@ -9,7 +9,7 @@
             "program": "${workspaceFolder}",
             "cwd": "${workspaceFolder}",
             "env": {},
-            "args": ["generate", "--config", "${workspaceFolder}/config.yml"],
+            "args": ["generate", "filesystem", "--config", "${workspaceFolder}/config.yml"],
             "showLog": true
         },
     ]

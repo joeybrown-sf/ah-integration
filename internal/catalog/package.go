@@ -18,11 +18,15 @@ type Package interface {
 	ArtifactRepository() string
 	ArtifactName() string
 	CreatedAt() time.Time
-	WillMigrate(registryClient *BuildpackRegistryClient) bool
+	WillMigrate() bool
 	DigestRef() string
 	VersionTagRef() string
 	Licenses() []string
 	Homepage() string
+	SetDescription(description string)
+	SetLicenses(licenses []string)
+	SetHomepage(homepage string)
+	SetCreatedAt(createdAt time.Time)
 }
 
 type artifact struct {
@@ -40,38 +44,35 @@ type artifact struct {
 	homepage           string
 }
 
-func (a *artifact) ImageRepository() string    { return a.imageRepository }
-func (a *artifact) ImageName() string          { return a.imageName }
-func (a *artifact) ImageDigest() string        { return a.imageDigest }
-func (a *artifact) Version() string            { return a.version }
-func (a *artifact) Yanked() bool               { return a.yanked }
-func (a *artifact) ArtifactRepository() string { return a.artifactRepository }
-func (a *artifact) ArtifactName() string       { return a.artifactName }
-func (a *artifact) CreatedAt() time.Time       { return a.createdAt }
-func (a *artifact) SetCreatedAt(t time.Time)   { a.createdAt = t }
-func (a *artifact) Description() string        { return a.description }
-func (a *artifact) Licenses() []string         { return a.licenses }
-func (a *artifact) Homepage() string           { return a.homepage }
+func (a *artifact) ImageRepository() string           { return a.imageRepository }
+func (a *artifact) ImageName() string                 { return a.imageName }
+func (a *artifact) ImageDigest() string               { return a.imageDigest }
+func (a *artifact) Version() string                   { return a.version }
+func (a *artifact) Yanked() bool                      { return a.yanked }
+func (a *artifact) ArtifactRepository() string        { return a.artifactRepository }
+func (a *artifact) ArtifactName() string              { return a.artifactName }
+func (a *artifact) CreatedAt() time.Time              { return a.createdAt }
+func (a *artifact) Description() string               { return a.description }
+func (a *artifact) Licenses() []string                { return a.licenses }
+func (a *artifact) Homepage() string                  { return a.homepage }
+func (a *artifact) SetDescription(description string) { a.description = description }
+func (a *artifact) SetLicenses(licenses []string)     { a.licenses = licenses }
+func (a *artifact) SetHomepage(homepage string)       { a.homepage = homepage }
+func (a *artifact) SetCreatedAt(createdAt time.Time)  { a.createdAt = createdAt }
 
-func (a *artifact) GetBuildpackRegistryMetadata(registryClient *BuildpackRegistryClient, force bool) (registryMetadata, bool) {
-	metadata, err := registryClient.GetBuildpackRegistryMetadata(a, force)
-	if err != nil {
-		fmt.Printf("failed to get buildpack registry for %s/%s: %v\n", a.ImageRepository(), a.ImageName(), err)
-		return registryMetadata{}, false
-	}
-	return *metadata, true
+func (a *artifact) WillMigrate() bool {
+	return time.Since(a.CreatedAt()) < a.migrationThreshold
 }
 
 type DockerhubPackage struct{ artifact }
 
 func (*DockerhubPackage) ImageRegistry() string { return "index.docker.io" }
-func (p *DockerhubPackage) WillMigrate(registryClient *BuildpackRegistryClient) bool {
+func (p *DockerhubPackage) WillMigrate() bool {
 	if p.Yanked() {
 		return false
 	}
 
-	metadata, exists := p.GetBuildpackRegistryMetadata(registryClient, false)
-	return exists && metadata.IsRecent(p.migrationThreshold)
+	return time.Since(p.CreatedAt()) < p.migrationThreshold
 }
 
 func (p *DockerhubPackage) DigestRef() string {
@@ -86,7 +87,7 @@ type ECRPackage struct{ artifact }
 
 func (*ECRPackage) ImageRegistry() string { return "public.ecr.aws" }
 
-func (p *ECRPackage) WillMigrate(_ *BuildpackRegistryClient) bool { return false }
+func (p *ECRPackage) WillMigrate() bool { return false }
 
 func (p *ECRPackage) DigestRef() string {
 	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
@@ -99,13 +100,9 @@ func (p *ECRPackage) VersionTagRef() string {
 type GHCRPackage struct{ artifact }
 
 func (*GHCRPackage) ImageRegistry() string { return "ghcr.io" }
-func (p *GHCRPackage) WillMigrate(registryClient *BuildpackRegistryClient) bool {
-	if p.Yanked() {
-		return false
-	}
+func (p *GHCRPackage) WillMigrate() bool {
 
-	metadata, exists := p.GetBuildpackRegistryMetadata(registryClient, false)
-	return exists && metadata.IsRecent(p.migrationThreshold)
+	return time.Since(p.CreatedAt()) < p.migrationThreshold
 }
 
 func (p *GHCRPackage) DigestRef() string {
@@ -118,8 +115,8 @@ func (p *GHCRPackage) VersionTagRef() string {
 
 type GCRPackage struct{ artifact }
 
-func (*GCRPackage) ImageRegistry() string                         { return "gcr.io" }
-func (p *GCRPackage) WillMigrate(_ *BuildpackRegistryClient) bool { return false }
+func (*GCRPackage) ImageRegistry() string { return "gcr.io" }
+func (p *GCRPackage) WillMigrate() bool   { return false }
 
 func (p *GCRPackage) DigestRef() string {
 	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())
@@ -131,8 +128,8 @@ func (p *GCRPackage) VersionTagRef() string {
 
 type FuturehaxPackage struct{ artifact }
 
-func (*FuturehaxPackage) ImageRegistry() string                         { return "registry.futurehax.com" }
-func (p *FuturehaxPackage) WillMigrate(_ *BuildpackRegistryClient) bool { return false }
+func (*FuturehaxPackage) ImageRegistry() string { return "registry.futurehax.com" }
+func (p *FuturehaxPackage) WillMigrate() bool   { return false }
 
 func (p *FuturehaxPackage) DigestRef() string {
 	return fmt.Sprintf("%s/%s/%s@%s", p.ImageRegistry(), p.ImageRepository(), p.ImageName(), p.ImageDigest())

@@ -54,18 +54,18 @@ func runGenerate(getOutputWriter func(cmd *cobra.Command, _ string) catalog.Outp
 			namespaces = viper.GetStringSlice("namespaces")
 		}
 
-		var ignoredRegistries []string
-		if cmd.Flags().Changed("ignored-registries") {
-			ignoredRegistries, _ = cmd.Flags().GetStringSlice("ignored-registries")
+		var registries []string
+		if cmd.Flags().Changed("registries") {
+			registries, _ = cmd.Flags().GetStringSlice("registries")
 		} else {
-			ignoredRegistries = viper.GetStringSlice("ignored_registries")
+			registries = viper.GetStringSlice("registries")
 		}
 
 		migrationThreshold := time.Duration(migrationThresholdMonths) * 30 * 24 * time.Hour
 
 		outputWriter := getOutputWriter(cmd, root)
 		generator := catalog.NewGenerator(migrationThreshold, root, outputWriter)
-		err := generator.GenerateCatalogFiles(force, namespaces, ignoredRegistries)
+		err := generator.GenerateCatalogFiles(force, namespaces, registries)
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -98,7 +98,7 @@ func init() {
 	// Common flags for both subcommands
 	generateCmd.PersistentFlags().BoolP("force", "f", false, "Overwrite existing artifacthub-pkg.yml files")
 	generateCmd.PersistentFlags().StringSlice("namespaces", []string{}, "Filter packages by namespace(s). Can be specified multiple times or as comma-separated values")
-	generateCmd.PersistentFlags().StringSlice("ignored-registries", []string{}, "Ignore packages from registry(ies). Can be specified multiple times or as comma-separated values")
+	generateCmd.PersistentFlags().StringSlice("registries", []string{}, "Filter packages by registry(ies). Can be specified multiple times or as comma-separated values")
 	generateCmd.PersistentFlags().Int("migration-threshold-mo", 24, "Threshold for migration in months")
 
 	// Filesystem-specific flags
@@ -109,5 +109,5 @@ func init() {
 
 	viper.BindPFlag("force", generateCmd.PersistentFlags().Lookup("force"))
 	viper.BindPFlag("namespaces", generateCmd.PersistentFlags().Lookup("namespaces"))
-	viper.BindPFlag("ignored_registries", generateCmd.PersistentFlags().Lookup("ignored-registries"))
+	viper.BindPFlag("registries", generateCmd.PersistentFlags().Lookup("registries"))
 }

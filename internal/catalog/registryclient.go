@@ -60,7 +60,7 @@ func NewBuildpackRegistryClient(httpClient *http.Client, cacheDir string) *Build
 	}
 }
 
-func (c *BuildpackRegistryClient) GetBuildpackRegistryMetadata(pkg Artifact, force bool) (*registryMetadata, error) {
+func (c *BuildpackRegistryClient) GetBuildpackRegistryMetadata(pkg Artifact, force bool) (*bprMetadata, error) {
 	cacheFile := filepath.Join(c.cacheDir, fmt.Sprintf("%s-%s-%s.json", pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version()))
 
 	if err := os.MkdirAll(c.cacheDir, 0755); err != nil {
@@ -76,7 +76,7 @@ func (c *BuildpackRegistryClient) GetBuildpackRegistryMetadata(pkg Artifact, for
 			return nil, err
 		}
 
-		metadata := &registryMetadata{}
+		metadata := &bprMetadata{}
 		err = json.Unmarshal(content, metadata)
 		if err != nil {
 			return nil, err
@@ -115,7 +115,7 @@ func (c *BuildpackRegistryClient) GetBuildpackRegistryMetadata(pkg Artifact, for
 	}
 	defer response.Body.Close()
 
-	metadata := &registryMetadata{}
+	metadata := &bprMetadata{}
 	err = json.NewDecoder(response.Body).Decode(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode registry response: %w", err)
@@ -133,17 +133,18 @@ func (c *BuildpackRegistryClient) GetBuildpackRegistryMetadata(pkg Artifact, for
 	return metadata, err
 }
 
-type registryMetadata struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Namespace string    `json:"namespace"`
-	Version   string    `json:"version"`
-	Homepage  string    `json:"homepage"`
-	Licenses  []string  `json:"licenses"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+type bprMetadata struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Namespace   string    `json:"namespace"`
+	Version     string    `json:"version"`
+	Homepage    string    `json:"homepage"`
+	Licenses    []string  `json:"licenses"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-func (m *registryMetadata) IsRecent(migrationThreshold time.Duration) bool {
+func (m *bprMetadata) IsRecent(migrationThreshold time.Duration) bool {
 	return time.Since(m.UpdatedAt) < migrationThreshold
 }

@@ -29,7 +29,7 @@ func NewGenerator(migrationThreshold time.Duration, rootDir string, outputWriter
 	}
 }
 
-func (g *Generator) GenerateCatalogFiles(force bool, namespaces []string, ignoredRegistries []string) error {
+func (g *Generator) GenerateCatalogFiles(force bool, namespaces []string, registries []string) error {
 	// Clone https://github.com/buildpacks/registry-index.git
 	repoDir, err := g.indexer.Clone(g.rootDir, force)
 	if err != nil {
@@ -43,20 +43,7 @@ func (g *Generator) GenerateCatalogFiles(force bool, namespaces []string, ignore
 	}
 
 	// Filter down to only packages that are candidates for migration
-	pkgs := g.filterPackages(localPkgs, namespaces, ignoredRegistries)
-
-	// // Count registries
-	// registryCount := make(map[string]int)
-	// for _, pkg := range pkgs {
-	// 	registryCount[pkg.ImageRegistry()]++
-	// }
-	// if len(registryCount) == 0 {
-	// 	fmt.Println("No packages will migrate (registries map is empty)")
-	// 	return nil
-	// }
-	// for registry, count := range registryCount {
-	// 	fmt.Printf("%s: %d\n", registry, count)
-	// }
+	pkgs := g.filterAndEnrichPackages(localPkgs, namespaces, registries)
 
 	return g.outputWriter.Write(pkgs, force)
 }
@@ -171,72 +158,63 @@ func (g *Generator) filterByNamespaces(pkgs []Package, namespaces []string) []Pa
 	return filteredPkgs
 }
 
-func (g *Generator) filterByIgnoredRegistries(pkgs []Package, ignoredRegistries []string) []Package {
-	if len(ignoredRegistries) == 0 {
+func (g *Generator) filterByRegistries(pkgs []Package, registries []string) []Package {
+	if len(registries) == 0 {
 		return pkgs
 	}
 
 	registryMap := make(map[string]bool)
-	for _, reg := range ignoredRegistries {
+	for _, reg := range registries {
 		registryMap[reg] = true
 	}
 
 	filteredPkgs := make([]Package, 0, len(pkgs))
 	for _, pkg := range pkgs {
-		if !registryMap[pkg.ImageRegistry()] {
+		if registryMap[pkg.ImageRegistry()] {
 			filteredPkgs = append(filteredPkgs, pkg)
 		}
 	}
 	return filteredPkgs
 }
 
-func (g *Generator) filterPackages(pkgs []Package, namespaces []string, ignoredRegistries []string) []Package {
+func (g *Generator) filterAndEnrichPackages(pkgs []Package, namespaces []string, registries []string) []Package {
 	if len(namespaces) > 0 {
 		pkgs = g.filterByNamespaces(pkgs, namespaces)
 	}
-
-	if len(ignoredRegistries) > 0 {
-		pkgs = g.filterByIgnoredRegistries(pkgs, ignoredRegistries)
+	if len(registries) > 0 {
+		pkgs = g.filterByRegistries(pkgs, registries)
 	}
 
-	filteredPkgs := make([]Package, 0, len(pkgs))
+	enrichedPkgs := []Package{}
 	for i, pkg := range pkgs {
+		if pkg.Yanked() {
+			continue
+		}
+
 		if (i+1)%20 == 0 {
 			fmt.Printf("Pulling package metadata from registry-api: %d of %d packages. Remaining: %d\n", i+1, len(pkgs), len(pkgs)-i-1)
 		}
-		
-		// If CreatedAt is zero, try to get it from registry metadata
-		if pkg.CreatedAt().IsZero() {
-			// Try to get metadata to populate CreatedAt
-			// We need to access the artifact's GetBuildpackRegistryMetadata method
-			// Use type assertion to check if it's one of our package types
-			switch p := pkg.(type) {
-			case *DockerhubPackage:
-				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
-					p.SetCreatedAt(metadata.CreatedAt)
-				}
-			case *GHCRPackage:
-				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
-					p.SetCreatedAt(metadata.CreatedAt)
-				}
-			case *ECRPackage:
-				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
-					p.SetCreatedAt(metadata.CreatedAt)
-				}
-			case *GCRPackage:
-				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
-					p.SetCreatedAt(metadata.CreatedAt)
-				}
-			case *FuturehaxPackage:
-				if metadata, exists := p.GetBuildpackRegistryMetadata(g.buildpackRegistryClient, false); exists && !metadata.CreatedAt.IsZero() {
-					p.SetCreatedAt(metadata.CreatedAt)
-				}
-			}
+		bprMetadata, err := g.buildpackRegistryClient.GetBuildpackRegistryMetadata(pkg, false)
+		if err != nil {
+			fmt.Printf("failed to get buildpack registry for %s/%s: %v\n", pkg.ImageRepository(), pkg.ImageName(), err)
+			continue
 		}
-		
-		if pkg.WillMigrate(g.buildpackRegistryClient) {
-			filteredPkgs = append(filteredPkgs, pkg)
+
+		pkg.SetDescription(bprMetadata.Description)
+
+		if bprMetadata.Description != "" {
+			pkg.SetDescription(bprMetadata.Description)
 		}
+
+		pkg.SetLicenses(bprMetadata.Licenses)
+		pkg.SetHomepage(bprMetadata.Homepage)
+		pkg.SetCreatedAt(bprMetadata.CreatedAt)
+
+		if !pkg.WillMigrate() {
+			continue
+		}
+
+		enrichedPkgs = append(enrichedPkgs, pkg)
 	}
-	return filteredPkgs
+	return enrichedPkgs
 }

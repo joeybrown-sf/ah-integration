@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +16,8 @@ type OutputWriter interface {
 }
 
 type FilesystemOutputWriter struct {
-	outputDir string
+	outputDir      string
+	imageExtractor *ImageExtractor
 }
 
 // Change represents a change introduced in a package version.
@@ -69,7 +72,7 @@ type PackageMetadata struct {
 	Description             string            `yaml:"description"`
 	LogoPath                string            `yaml:"logoPath"`
 	LogoURL                 string            `yaml:"logoURL"`
-	Digest                  string            `yaml:"digest"`
+	Digest                  string            `yaml:"digest,omitempty"`
 	License                 string            `yaml:"license,omitempty"`
 	HomeURL                 string            `yaml:"homeURL"`
 	AppVersion              string            `yaml:"appVersion"`
@@ -93,21 +96,34 @@ type PackageMetadata struct {
 }
 
 func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
-	for _, pkg := range pkgs {
+	for i, pkg := range pkgs {
+		versionDir := filepath.Join(w.outputDir, pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version())
+		artifacthubPkgYml := filepath.Join(versionDir, "artifacthub-pkg.yml")
+		buildpackToml := filepath.Join(versionDir, "buildpack.toml")
+		packageToml := filepath.Join(versionDir, "package.toml")
 
-		artifacthubPkgYml := filepath.Join(w.outputDir, pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version(), "artifacthub-pkg.yml")
-
+		// Check if we should skip this package
 		stat, err := os.Stat(artifacthubPkgYml)
 		if err == nil {
 			// File exists, check if we should skip it
 			if !force && stat.Size() > 0 {
-				continue
+				// Also check if both toml files exist
+				buildpackStat, _ := os.Stat(buildpackToml)
+				packageStat, _ := os.Stat(packageToml)
+				if buildpackStat != nil && packageStat != nil {
+					// All files exist, skip
+					continue
+				}
 			}
 		} else if !os.IsNotExist(err) {
 			// Error other than file not existing (e.g., permission error)
 			return err
 		}
 		// File doesn't exist or we're forcing overwrite, proceed to create it
+
+		if (i+1)%10 == 0 {
+			fmt.Printf("Processing package %d of %d: %s/%s:%s\n", i+1, len(pkgs), pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version())
+		}
 
 		var license string
 		if len(pkg.Licenses()) > 0 {
@@ -125,10 +141,9 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 			ContainersImages: []*ContainerImage{
 				{
 					Name:  pkg.ImageName(),
-					Image: pkg.VersionTagRef(),
+					Image: pkg.DigestRef(),
 				},
 			},
-			Digest:      pkg.ImageDigest(),
 			Description: description,
 			DisplayName: pkg.ArtifactName(),
 			HomeURL:     pkg.Homepage(),
@@ -148,13 +163,37 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 			return err
 		}
 
+		// First, marshal without digest to calculate the digest
+		packageYmlWithoutDigest, err := yaml.Marshal(pkgMetadata)
+		if err != nil {
+			return err
+		}
+
+		// Calculate SHA256 digest of the YAML content
+		hash := sha256.Sum256(packageYmlWithoutDigest)
+		digest := hex.EncodeToString(hash[:])
+
+		// Set the digest in the metadata
+		pkgMetadata.Digest = digest
+
+		// Marshal again with the digest included
 		packageYml, err := yaml.Marshal(pkgMetadata)
 		if err != nil {
 			return err
 		}
 		if err := os.WriteFile(artifacthubPkgYml, packageYml, 0644); err != nil {
 			return err
+		}
 
+		// Extract and save buildpack.toml and package.toml from the image
+		filesToExtract := make(map[string]string)
+		filesToExtract["buildpack.toml"] = buildpackToml
+		filesToExtract["package.toml"] = packageToml
+
+		extractErrors := w.imageExtractor.ExtractFiles(pkg.DigestRef(), filesToExtract)
+		for filename, err := range extractErrors {
+			fmt.Printf("Warning: failed to extract %s for %s/%s:%s: %v\n",
+				filename, pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version(), err)
 		}
 	}
 
@@ -164,7 +203,10 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 }
 
 func NewFilesystemOutputWriter(outputDir string) *FilesystemOutputWriter {
-	return &FilesystemOutputWriter{outputDir: outputDir}
+	return &FilesystemOutputWriter{
+		outputDir:      outputDir,
+		imageExtractor: NewImageExtractor(),
+	}
 }
 
 type ImageOutputWriter struct {

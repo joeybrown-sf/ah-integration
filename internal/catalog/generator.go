@@ -29,7 +29,7 @@ func NewGenerator(migrationThreshold time.Duration, rootDir string, outputWriter
 	}
 }
 
-func (g *Generator) GenerateCatalogFiles(force bool, namespaces []string, registries []string) error {
+func (g *Generator) GenerateCatalogFiles(force bool, namespaces []string, registries []string, names []string) error {
 	// Clone https://github.com/buildpacks/registry-index.git
 	repoDir, err := g.indexer.Clone(g.rootDir, force)
 	if err != nil {
@@ -43,7 +43,7 @@ func (g *Generator) GenerateCatalogFiles(force bool, namespaces []string, regist
 	}
 
 	// Filter down to only packages that are candidates for migration
-	pkgs := g.filterAndEnrichPackages(localPkgs, namespaces, registries)
+	pkgs := g.filterAndEnrichPackages(localPkgs, namespaces, registries, names)
 
 	return g.outputWriter.Write(pkgs, force)
 }
@@ -177,12 +177,34 @@ func (g *Generator) filterByRegistries(pkgs []Package, registries []string) []Pa
 	return filteredPkgs
 }
 
-func (g *Generator) filterAndEnrichPackages(pkgs []Package, namespaces []string, registries []string) []Package {
+func (g *Generator) filterByNames(pkgs []Package, names []string) []Package {
+	if len(names) == 0 {
+		return pkgs
+	}
+
+	nameMap := make(map[string]bool)
+	for _, name := range names {
+		nameMap[name] = true
+	}
+
+	filteredPkgs := make([]Package, 0, len(pkgs))
+	for _, pkg := range pkgs {
+		if nameMap[pkg.ArtifactName()] {
+			filteredPkgs = append(filteredPkgs, pkg)
+		}
+	}
+	return filteredPkgs
+}
+
+func (g *Generator) filterAndEnrichPackages(pkgs []Package, namespaces []string, registries []string, names []string) []Package {
 	if len(namespaces) > 0 {
 		pkgs = g.filterByNamespaces(pkgs, namespaces)
 	}
 	if len(registries) > 0 {
 		pkgs = g.filterByRegistries(pkgs, registries)
+	}
+	if len(names) > 0 {
+		pkgs = g.filterByNames(pkgs, names)
 	}
 
 	enrichedPkgs := []Package{}

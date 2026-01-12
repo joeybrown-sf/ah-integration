@@ -61,11 +61,18 @@ func runGenerate(getOutputWriter func(cmd *cobra.Command, _ string) catalog.Outp
 			registries = viper.GetStringSlice("registries")
 		}
 
+		var names []string
+		if cmd.Flags().Changed("names") {
+			names, _ = cmd.Flags().GetStringSlice("names")
+		} else {
+			names = viper.GetStringSlice("names")
+		}
+
 		migrationThreshold := time.Duration(migrationThresholdMonths) * 30 * 24 * time.Hour
 
 		outputWriter := getOutputWriter(cmd, root)
 		generator := catalog.NewGenerator(migrationThreshold, root, outputWriter)
-		err := generator.GenerateCatalogFiles(force, namespaces, registries)
+		err := generator.GenerateCatalogFiles(force, namespaces, registries, names)
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -99,6 +106,7 @@ func init() {
 	generateCmd.PersistentFlags().BoolP("force", "f", false, "Overwrite existing artifacthub-pkg.yml files")
 	generateCmd.PersistentFlags().StringSlice("namespaces", []string{}, "Filter packages by namespace(s). Can be specified multiple times or as comma-separated values")
 	generateCmd.PersistentFlags().StringSlice("registries", []string{}, "Filter packages by registry(ies). Can be specified multiple times or as comma-separated values")
+	generateCmd.PersistentFlags().StringSlice("names", []string{}, "Filter packages by buildpack name(s). Can be specified multiple times or as comma-separated values. If provided with namespace, only those specific buildpacks will be scanned")
 	generateCmd.PersistentFlags().Int("migration-threshold-mo", 24, "Threshold for migration in months")
 
 	// Filesystem-specific flags
@@ -110,4 +118,5 @@ func init() {
 	viper.BindPFlag("force", generateCmd.PersistentFlags().Lookup("force"))
 	viper.BindPFlag("namespaces", generateCmd.PersistentFlags().Lookup("namespaces"))
 	viper.BindPFlag("registries", generateCmd.PersistentFlags().Lookup("registries"))
+	viper.BindPFlag("names", generateCmd.PersistentFlags().Lookup("names"))
 }

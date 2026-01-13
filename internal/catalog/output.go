@@ -16,8 +16,9 @@ type OutputWriter interface {
 }
 
 type FilesystemOutputWriter struct {
-	outputDir      string
-	imageExtractor *ImageExtractor
+	outputDir       string
+	imageExtractor  *ImageExtractor
+	namespaceImages map[string]string
 }
 
 // Change represents a change introduced in a package version.
@@ -100,7 +101,6 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 		versionDir := filepath.Join(w.outputDir, pkg.ArtifactRepository(), pkg.ArtifactName(), pkg.Version())
 		artifacthubPkgYml := filepath.Join(versionDir, "artifacthub-pkg.yml")
 		buildpackToml := filepath.Join(versionDir, "buildpack.toml")
-		packageToml := filepath.Join(versionDir, "package.toml")
 
 		// Check if we should skip this package
 		stat, err := os.Stat(artifacthubPkgYml)
@@ -109,8 +109,7 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 			if !force && stat.Size() > 0 {
 				// Also check if both toml files exist
 				buildpackStat, _ := os.Stat(buildpackToml)
-				packageStat, _ := os.Stat(packageToml)
-				if buildpackStat != nil && packageStat != nil {
+				if buildpackStat != nil {
 					// All files exist, skip
 					continue
 				}
@@ -159,6 +158,12 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 			pkgMetadata.License = license
 		}
 
+		// Set logo path if namespace mapping exists
+		namespace := pkg.ArtifactRepository()
+		if logoFilename, ok := w.namespaceImages[namespace]; ok {
+			pkgMetadata.LogoPath = logoFilename
+		}
+
 		if err := os.MkdirAll(filepath.Dir(artifacthubPkgYml), 0755); err != nil {
 			return err
 		}
@@ -185,10 +190,15 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 			return err
 		}
 
-		// Extract and save buildpack.toml and package.toml from the image
+		// Extract files from the image (buildpack.toml and logo if applicable)
 		filesToExtract := make(map[string]string)
 		filesToExtract["buildpack.toml"] = buildpackToml
-		filesToExtract["package.toml"] = packageToml
+
+		// Extract logo if namespace mapping exists
+		if logoFilename, ok := w.namespaceImages[namespace]; ok {
+			logoPath := filepath.Join(versionDir, logoFilename)
+			filesToExtract[logoFilename] = logoPath
+		}
 
 		extractErrors := w.imageExtractor.ExtractFiles(pkg.DigestRef(), filesToExtract)
 		for filename, err := range extractErrors {
@@ -202,10 +212,11 @@ func (w *FilesystemOutputWriter) Write(pkgs []Package, force bool) error {
 	return nil
 }
 
-func NewFilesystemOutputWriter(outputDir string) *FilesystemOutputWriter {
+func NewFilesystemOutputWriter(outputDir string, namespaceImages map[string]string) *FilesystemOutputWriter {
 	return &FilesystemOutputWriter{
-		outputDir:      outputDir,
-		imageExtractor: NewImageExtractor(),
+		outputDir:       outputDir,
+		imageExtractor:  NewImageExtractor(),
+		namespaceImages: namespaceImages,
 	}
 }
 

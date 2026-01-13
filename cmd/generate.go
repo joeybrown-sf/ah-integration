@@ -24,10 +24,14 @@ var generateFilesystemCmd = &cobra.Command{
 	Long:  `Walk through directories (excluding hidden ones) and create artifacthub-pkg.yml files in .catalog directories`,
 	Run: runGenerate(func(cmd *cobra.Command, root string) catalog.OutputWriter {
 		outputDir, _ := cmd.Flags().GetString("output-dir")
-		if outputDir != "" {
-			return catalog.NewFilesystemOutputWriter(outputDir)
+		if outputDir == "" {
+			outputDir = filepath.Join(root, "catalog")
 		}
-		return catalog.NewFilesystemOutputWriter(filepath.Join(root, "catalog"))
+
+		// Parse namespace_images from config
+		namespaceImages := parseNamespaceImages(viper.Get("namespace_images"))
+
+		return catalog.NewFilesystemOutputWriter(outputDir, namespaceImages)
 	}),
 }
 
@@ -119,4 +123,46 @@ func init() {
 	viper.BindPFlag("namespaces", generateCmd.PersistentFlags().Lookup("namespaces"))
 	viper.BindPFlag("registries", generateCmd.PersistentFlags().Lookup("registries"))
 	viper.BindPFlag("names", generateCmd.PersistentFlags().Lookup("names"))
+}
+
+// parseNamespaceImages parses the namespace_images config which can be in two formats:
+// 1. Map format: { "paketo-buildpacks": "logo.png", "heroku": "logo.png" }
+// 2. List format: [ { "paketo-buildpacks": "logo.png" }, { "heroku": "logo.png" } ]
+func parseNamespaceImages(config interface{}) map[string]string {
+	result := make(map[string]string)
+
+	if config == nil {
+		return result
+	}
+
+	// Try to parse as map[string]string first (standard YAML map format)
+	if m, ok := config.(map[string]interface{}); ok {
+		for k, v := range m {
+			if str, ok := v.(string); ok {
+				result[k] = str
+			}
+		}
+		return result
+	}
+
+	// Try to parse as []map[string]interface{} (list of maps format from config.yml)
+	if list, ok := config.([]interface{}); ok {
+		for _, item := range list {
+			if m, ok := item.(map[string]interface{}); ok {
+				for k, v := range m {
+					if str, ok := v.(string); ok {
+						result[k] = str
+					}
+				}
+			}
+		}
+		return result
+	}
+
+	// Try to parse as map[string]string directly
+	if m, ok := config.(map[string]string); ok {
+		return m
+	}
+
+	return result
 }

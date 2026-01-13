@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -38,8 +39,8 @@ func (e *ImageExtractor) ExtractFiles(imageRef string, files map[string]string) 
 		return errors
 	}
 
-	// Pull the image
-	img, err := remote.Image(ref)
+	// Pull the image with authentication from Docker config
+	img, err := remote.Image(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil {
 		// If we can't pull the image, all files fail
 		for filename := range files {
